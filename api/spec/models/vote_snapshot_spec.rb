@@ -1,0 +1,21 @@
+require "rails_helper"
+
+RSpec.describe VoteSnapshot, type: :model do
+  describe "associations" do
+    it "belongs to election and participant" do
+      snapshot = create(:vote_snapshot)
+
+      expect(snapshot.election).to be_present
+      expect(snapshot.participant).to be_present
+    end
+  end
+
+  describe "validations" do
+    it "validates presence of hour" do
+      snapshot = build(:vote_snapshot, hour: nil)
+
+      expect(snapshot).not_to be_valid
+      expect(snapshot.errors[:hour]).to include("can't be blank")
+    end
+  end
+end

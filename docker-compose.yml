@@ -1,0 +1,143 @@
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: bbb_api
+    command: bash -lc "bundle exec rails db:prepare && bundle exec puma -C config/puma.rb"
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./api:/app
+      - bundle_cache:/usr/local/bundle
+    environment:
+      RAILS_ENV: development
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: bbb_voting_development
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      REDIS_URL: redis://redis:6379/0
+      RAILS_LOG_TO_STDOUT: "true"
+      RAILS_SERVE_STATIC_FILES: "true"
+      RAILS_MAX_THREADS: 10
+      WEB_CONCURRENCY: 2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - bbb_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: bbb_frontend
+    command: npm run dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      INTERNAL_API_URL: http://api:3000
+    depends_on:
+      - api
+    networks:
+      - bbb_network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: bbb_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: bbb_voting_development
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bbb_voting_development"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bbb_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: bbb_redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - bbb_network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: bbb_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - api
+    networks:
+      - bbb_network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: bbb_grafana
+    ports:
+      - "3002:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - bbb_network
+
+  k6:
+    image: grafana/k6:latest
+    container_name: bbb_k6
+    volumes:
+      - ./load-tests:/scripts
+    environment:
+      API_BASE_URL: http://api:3000
+    depends_on:
+      - api
+    networks:
+      - bbb_network
+    profiles:
+      - loadtest
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  bundle_cache:
+  frontend_node_modules:
+
+networks:
+  bbb_network:
+    driver: bridge
