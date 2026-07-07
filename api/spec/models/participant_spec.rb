@@ -29,18 +29,18 @@ RSpec.describe Participant, type: :model do
   describe "associations" do
     it "has many election_participants" do
       participant = create(:participant)
-      election = create(:election)
+      election = create(:election, :running)
       election_participant = create(:election_participant, participant: participant, election: election)
 
-      expect(participant.election_participants).to include(election_participant)
+      expect(participant.election_participants).to contain_exactly(election_participant)
     end
 
     it "has many elections through election_participants" do
       participant = create(:participant)
-      election = create(:election)
+      election = create(:election, :running)
       create(:election_participant, participant: participant, election: election)
 
-      expect(participant.elections).to include(election)
+      expect(participant.elections).to contain_exactly(election)
     end
   end
 end

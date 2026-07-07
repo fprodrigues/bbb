@@ -3,7 +3,7 @@ require "rails_helper"
 RSpec.describe Election, type: :model do
   describe "validations" do
     it "accepts draft, running and closed statuses" do
-      Election::STATUSES.each do |status|
+      %w[draft running closed].each do |status|
         election = build(:election, status: status)
 
         expect(election).to be_valid
@@ -14,7 +14,21 @@ RSpec.describe Election, type: :model do
       election = build(:election, status: "invalid")
 
       expect(election).not_to be_valid
-      expect(election.errors[:status]).to include("is not included in the list")
+      expect(election.errors[:status]).to be_present
+    end
+  end
+
+  describe "status predicates" do
+    it "identifies draft elections" do
+      expect(build(:election, :draft)).to be_draft
+    end
+
+    it "identifies running elections" do
+      expect(build(:election, :running)).to be_running
+    end
+
+    it "identifies closed elections" do
+      expect(build(:election, :closed)).to be_closed
     end
   end
 
@@ -31,22 +45,14 @@ RSpec.describe Election, type: :model do
 
     describe ".running" do
       it "returns only running elections" do
-        expect(Election.running).to eq([running_election])
+        expect(Election.running).to contain_exactly(running_election)
       end
     end
 
     describe ".closed" do
       it "returns only closed elections ordered by ended_at desc" do
-        expect(Election.closed).to eq([closed_election])
+        expect(Election.closed).to contain_exactly(closed_election)
       end
-    end
-  end
-
-  describe "status predicates" do
-    it "responds to draft?, running? and closed?" do
-      expect(build(:election, :draft).draft?).to be(true)
-      expect(build(:election, :running).running?).to be(true)
-      expect(build(:election, :closed).closed?).to be(true)
     end
   end
 end

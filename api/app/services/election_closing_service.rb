@@ -16,15 +16,25 @@ class ElectionClosingService
       )
     end
 
+    clear_redis_keys(election)
+
     Rails.logger.info(
-      event: "election_closed",
-      election_id: election.id
-    ).to_json
+      {
+        event: "election_closed",
+        election_id: election.id
+      }.to_json
+    )
 
     election
   end
 
   private
+
+  def clear_redis_keys(election)
+    @redis.scan_each(match: "election:#{election.id}:*") do |key|
+      @redis.del(key)
+    end
+  end
 
   def persist_final_votes(election)
     election.election_participants.includes(:participant).find_each do |election_participant|
@@ -41,7 +51,6 @@ class ElectionClosingService
 
     @redis.keys(pattern).each do |key|
       hour = key.split(":hour:").last.delete_suffix(":votes")
-      votes = @redis.get(key).to_i
 
       election.participants.each do |participant|
         participant_votes = @redis.get(

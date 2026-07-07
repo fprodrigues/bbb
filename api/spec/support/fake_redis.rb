@@ -4,25 +4,35 @@ class FakeRedis
   end
 
   def get(key)
-    value = @store[key]
-    value.nil? ? nil : value.to_s
+    @store[key]
   end
 
   def incr(key)
-    @store[key] = @store.fetch(key, 0).to_i + 1
+    @store[key] = (@store[key].to_i + 1).to_s
+  end
+
+  def del(key)
+    @store.delete(key)
   end
 
   def multi
     yield self
-    self
   end
 
   def keys(pattern)
-    regex = Regexp.new("\\A#{Regexp.escape(pattern).gsub('\*', '.*')}\\z")
+    regex = glob_to_regex(pattern)
     @store.keys.grep(regex)
   end
 
-  def flushdb
-    @store.clear
+  def scan_each(match:)
+    keys(match).each { |key| yield key }
+  end
+
+  private
+
+  def glob_to_regex(pattern)
+    Regexp.new(
+      "^" + pattern.gsub(".", '\.').gsub("*", ".*") + "$"
+    )
   end
 end

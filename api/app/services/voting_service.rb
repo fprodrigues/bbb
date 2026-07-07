@@ -9,19 +9,41 @@ class VotingService
 
   def vote!(participant_id:)
     election = Election.running.first
-    VOTES_REJECTED_TOTAL.increment(labels: { reason: "no_running_election" })
-    raise NoRunningElectionError, "Nenhuma votação em andamento." unless election
+
+    unless election
+      VOTES_REJECTED_TOTAL.increment(
+        labels: {
+          reason: "no_running_election"
+        }
+      )
+
+      Rails.logger.warn(
+        {
+          event: "vote_rejected",
+          reason: "no_running_election"
+        }.to_json
+      )
+
+      raise NoRunningElectionError, "Nenhuma votação em andamento."
+    end
 
     participant_id = participant_id.to_i
 
     unless election.participants.exists?(id: participant_id)
-      Rails.logger.warn(
-        event: "invalid_vote",
-        election_id: election.id,
-        participant_id: participant_id
-      ).to_json
+      VOTES_REJECTED_TOTAL.increment(
+        labels: {
+          reason: "invalid_participant"
+        }
+      )
 
-      VOTES_REJECTED_TOTAL.increment(labels: { reason: "invalid_participant" })
+      Rails.logger.warn(
+        {
+          event: "invalid_vote",
+          election_id: election.id,
+          participant_id: participant_id
+        }.to_json
+      )
+
       raise InvalidParticipantError, "Participante não disponível para esta votação."
     end
 
@@ -31,13 +53,19 @@ class VotingService
       transaction.incr(hour_key(election.id, current_hour))
     end
 
-    VOTES_TOTAL.increment(labels: { participant_id: participant_id.to_s })
+    VOTES_TOTAL.increment(
+      labels: {
+        participant_id: participant_id.to_s
+      }
+    )
 
     Rails.logger.info(
-      event: "vote_computed",
-      election_id: election.id,
-      participant_id: participant_id
-    ).to_json
+      {
+        event: "vote_computed",
+        election_id: election.id,
+        participant_id: participant_id
+      }.to_json
+    )
 
     ResultsService.new(redis: @redis).current_results(election)
   end

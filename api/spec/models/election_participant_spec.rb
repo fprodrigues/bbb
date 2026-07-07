@@ -3,16 +3,18 @@ require "rails_helper"
 RSpec.describe ElectionParticipant, type: :model do
   describe "associations" do
     it "belongs to election and participant" do
-      election_participant = create(:election_participant)
+      election = create(:election, :draft)
+      participant = create(:participant)
+      election_participant = create(:election_participant, election: election, participant: participant)
 
-      expect(election_participant.election).to be_present
-      expect(election_participant.participant).to be_present
+      expect(election_participant.election).to eq(election)
+      expect(election_participant.participant).to eq(participant)
     end
   end
 
   describe "validations" do
     it "enforces uniqueness of participant within the same election" do
-      election = create(:election)
+      election = create(:election, :draft)
       participant = create(:participant)
       create(:election_participant, election: election, participant: participant)
 
@@ -24,8 +26,8 @@ RSpec.describe ElectionParticipant, type: :model do
 
     it "allows the same participant in different elections" do
       participant = create(:participant)
-      first_election = create(:election)
-      second_election = create(:election)
+      first_election = create(:election, :closed)
+      second_election = create(:election, :draft)
 
       first = create(:election_participant, election: first_election, participant: participant)
       second = build(:election_participant, election: second_election, participant: participant)

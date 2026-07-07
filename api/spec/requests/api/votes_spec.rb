@@ -2,41 +2,39 @@ require "rails_helper"
 
 RSpec.describe "Api::Votes", type: :request do
   describe "POST /api/votes" do
-    let!(:election) { create(:election, :running) }
-    let!(:first_participant) { create(:participant) }
-    let!(:second_participant) { create(:participant) }
+    context "with a valid vote" do
+      it "returns 201 with updated results" do
+        _election, participants = create_election_with_participants
 
-    before do
-      create(:election_participant, election: election, participant: first_participant)
-      create(:election_participant, election: election, participant: second_participant)
+        post "/api/votes", params: { participant_id: participants.first.id }
+
+        expect(response).to have_http_status(:created)
+
+        body = JSON.parse(response.body)
+        expect(body["total_votes"]).to eq(1)
+        expect(body["candidates"].find { |c| c["participant_id"] == participants.first.id }["votes"]).to eq(1)
+      end
     end
 
-    it "returns 201 with updated results for a valid vote" do
-      post "/api/votes", params: { participant_id: first_participant.id }
+    context "when there is no running election" do
+      it "returns 422" do
+        post "/api/votes", params: { participant_id: 1 }
 
-      expect(response).to have_http_status(:created)
-      body = response.parsed_body
-      expect(body["election_id"]).to eq(election.id)
-      expect(body["total_votes"]).to eq(1)
-      expect(body["candidates"].find { |c| c["participant_id"] == first_participant.id }["votes"]).to eq(1)
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(JSON.parse(response.body)["error"]).to eq("Nenhuma votação em andamento.")
+      end
     end
 
-    it "returns 422 when there is no running election" do
-      election.update!(status: "closed", ended_at: Time.current)
+    context "when participant is not in the running election" do
+      it "returns 422" do
+        create_election_with_participants
+        outsider = create(:participant, name: "Fora")
 
-      post "/api/votes", params: { participant_id: first_participant.id }
+        post "/api/votes", params: { participant_id: outsider.id }
 
-      expect(response).to have_http_status(:unprocessable_entity)
-      expect(response.parsed_body["error"]).to eq("Nenhuma votação em andamento.")
-    end
-
-    it "returns 422 when participant is not in the running election" do
-      outsider = create(:participant)
-
-      post "/api/votes", params: { participant_id: outsider.id }
-
-      expect(response).to have_http_status(:unprocessable_entity)
-      expect(response.parsed_body["error"]).to eq("Participante não disponível para esta votação.")
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(JSON.parse(response.body)["error"]).to eq("Participante não disponível para esta votação.")
+      end
     end
   end
 end

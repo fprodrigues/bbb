@@ -1,8 +1,7 @@
 require "rails_helper"
 
 RSpec.describe ElectionClosingService do
-  let(:redis) { FakeRedis.new }
-  let(:service) { described_class.new(redis: redis) }
+  subject(:service) { described_class.new(redis: REDIS) }
 
   describe "#close!" do
     context "when election is not running" do
@@ -10,75 +9,81 @@ RSpec.describe ElectionClosingService do
         election = create(:election, :draft)
 
         expect { service.close!(election) }
-          .to raise_error("Votação não está em andamento.")
+          .to raise_error(RuntimeError, "Votação não está em andamento.")
       end
     end
 
     context "when election is running" do
-      let!(:election) { create(:election, :running) }
-      let!(:first_participant) { create(:participant) }
-      let!(:second_participant) { create(:participant) }
-      let!(:first_election_participant) do
-        create(:election_participant, election: election, participant: first_participant)
-      end
-      let!(:second_election_participant) do
-        create(:election_participant, election: election, participant: second_participant)
-      end
+      let(:election) { create_election_with_participants.first }
+      let(:participants) { election.participants.order(:id).to_a }
+      let(:first_candidate) { participants.first }
+      let(:second_candidate) { participants.second }
+      let(:hour) { Time.current.beginning_of_hour.utc.iso8601 }
 
       before do
-        freeze_time do
-          hour = Time.current.beginning_of_hour.utc.iso8601
-
-          redis.incr("election:#{election.id}:participant:#{first_participant.id}:votes")
-          redis.incr("election:#{election.id}:participant:#{first_participant.id}:votes")
-          redis.incr("election:#{election.id}:participant:#{second_participant.id}:votes")
-          redis.incr("election:#{election.id}:hour:#{hour}:votes")
-          redis.incr("election:#{election.id}:hour:#{hour}:votes")
-          redis.incr("election:#{election.id}:hour:#{hour}:votes")
-        end
+        REDIS.incr(vote_key(election.id, first_candidate.id))
+        REDIS.incr(vote_key(election.id, first_candidate.id))
+        REDIS.incr(vote_key(election.id, second_candidate.id))
+        REDIS.incr(total_key(election.id))
+        REDIS.incr(total_key(election.id))
+        REDIS.incr(total_key(election.id))
+        REDIS.incr(hour_key(election.id, hour))
       end
 
-      it "persists final votes, snapshots and closes the election in a transaction" do
-        freeze_time do
-          closed_election = service.close!(election)
+      it "persists final votes on election participants" do
+        service.close!(election)
 
-          expect(closed_election.status).to eq("closed")
-          expect(closed_election.ended_at).to eq(Time.current)
+        expect(first_candidate.election_participants.find_by(election: election).final_votes).to eq(2)
+        expect(second_candidate.election_participants.find_by(election: election).final_votes).to eq(1)
+      end
 
-          expect(first_election_participant.reload.final_votes).to eq(2)
-          expect(second_election_participant.reload.final_votes).to eq(1)
+      it "creates vote snapshots for each hour key" do
+        service.close!(election)
 
-          hour = Time.current.beginning_of_hour
-          expect(
-            VoteSnapshot.find_by(
-              election: election,
-              participant: first_participant,
-              hour: hour
-            ).votes
-          ).to eq(2)
-          expect(
-            VoteSnapshot.find_by(
-              election: election,
-              participant: second_participant,
-              hour: hour
-            ).votes
-          ).to eq(1)
-        end
+        snapshots = VoteSnapshot.where(election: election, hour: Time.zone.parse(hour))
+
+        expect(snapshots.count).to eq(2)
+        expect(snapshots.find_by(participant: first_candidate).votes).to eq(2)
+        expect(snapshots.find_by(participant: second_candidate).votes).to eq(1)
       end
 
       it "updates existing vote snapshots" do
-        hour = Time.current.beginning_of_hour
-        snapshot = create(
+        existing = create(
           :vote_snapshot,
           election: election,
-          participant: first_participant,
-          hour: hour,
+          participant: first_candidate,
+          hour: Time.zone.parse(hour),
           votes: 0
         )
 
         service.close!(election)
 
-        expect(snapshot.reload.votes).to eq(2)
+        expect(existing.reload.votes).to eq(2)
+      end
+
+      it "marks the election as closed and sets ended_at" do
+        freeze_time = Time.utc(2026, 7, 7, 18, 0, 0)
+
+        travel_to freeze_time do
+          closed_election = service.close!(election)
+
+          expect(closed_election.status).to eq("closed")
+          expect(closed_election.ended_at).to eq(freeze_time)
+        end
+      end
+
+      it "clears Redis keys for the election" do
+        service.close!(election)
+
+        expect(REDIS.keys("election:#{election.id}:*")).to be_empty
+      end
+
+      it "keeps database changes consistent inside a transaction" do
+        allow(election).to receive(:update!).and_raise(ActiveRecord::RecordInvalid.new(election))
+
+        expect { service.close!(election) }.to raise_error(ActiveRecord::RecordInvalid)
+        expect(election.reload.status).to eq("running")
+        expect(VoteSnapshot.where(election: election)).to be_empty
       end
     end
   end

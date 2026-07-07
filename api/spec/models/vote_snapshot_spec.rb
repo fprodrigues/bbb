@@ -3,10 +3,12 @@ require "rails_helper"
 RSpec.describe VoteSnapshot, type: :model do
   describe "associations" do
     it "belongs to election and participant" do
-      snapshot = create(:vote_snapshot)
+      election = create(:election, :closed)
+      participant = create(:participant)
+      snapshot = create(:vote_snapshot, election: election, participant: participant)
 
-      expect(snapshot.election).to be_present
-      expect(snapshot.participant).to be_present
+      expect(snapshot.election).to eq(election)
+      expect(snapshot.participant).to eq(participant)
     end
   end
 

@@ -1,7 +1,5 @@
 FactoryBot.define do
   factory :election do
-    status { "draft" }
-
     trait :draft do
       status { "draft" }
     end
@@ -14,7 +12,7 @@ FactoryBot.define do
     trait :closed do
       status { "closed" }
       started_at { 2.hours.ago }
-      ended_at { Time.current }
+      ended_at { 1.hour.ago }
     end
   end
 end
