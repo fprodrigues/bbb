@@ -4,13 +4,13 @@ class ApplicationController < ActionController::API
   private
 
   def track_request_metrics
-    start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
     yield
   ensure
-    duration = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time
+    duration = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
 
-    path = request.path
+    path = normalized_path
     method = request.method
     status = response.status.to_s
 
@@ -29,5 +29,11 @@ class ApplicationController < ActionController::API
         path: path
       }
     )
+  end
+
+  def normalized_path
+    request.path.gsub(%r{/\d+}, "/:id")
+  rescue StandardError
+    request.path
   end
 end
