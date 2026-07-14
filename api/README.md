@@ -4,7 +4,7 @@ API Ruby on Rails para o sistema de votação estilo BBB.
 
 ## Dependências
 
-- Ruby 3.0.7
+- Ruby 3.3.6
 - PostgreSQL
 - Redis
 
